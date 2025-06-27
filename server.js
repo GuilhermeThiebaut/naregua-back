@@ -13,8 +13,26 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middlewares Globais
-app.use(cors());
+// --- CONFIGURAÇÃO DE CORS FINAL E ROBUSTA ---
+// IMPORTANTE: Substitua pela URL real do seu site no Netlify
+const allowedOrigins = ['https://SEU-SITE.netlify.app']; 
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permite requisições sem 'origin' (como de apps mobile ou Postman) OU se a origem está na lista de permitidos
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Acesso bloqueado por CORS'));
+    }
+  },
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE', // Garante que todos os métodos HTTP são permitidos
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+// --- FIM DA CONFIGURAÇÃO DE CORS ---
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -24,7 +42,8 @@ const dbConfig = {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
-    port: process.env.DB_PORT || 3306
+    port: process.env.DB_PORT || 3306,
+    ssl: process.env.DB_SSL ? JSON.parse(process.env.DB_SSL) : null
 };
 
 // Chave secreta para JWT (Preparada para Deploy)
@@ -32,7 +51,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 // --- FUNÇÕES AUXILIARES ---
 function parseDateTime(dateStr, timeStr) {
-    // Usar -03:00 para forçar o fuso horário de Brasília (se aplicável)
     return new Date(`${dateStr}T${timeStr}:00.000-03:00`); 
 }
 
@@ -42,10 +60,7 @@ const autenticarToken = (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
     if (token == null) return res.sendStatus(401);
     jwt.verify(token, JWT_SECRET, (err, userPayload) => {
-        if (err) {
-            console.error("Erro na verificação do JWT:", err.message);
-            return res.sendStatus(403);
-        }
+        if (err) return res.sendStatus(403);
         req.user = userPayload;
         next();
     });
@@ -578,7 +593,7 @@ app.delete('/api/admin/produtos/:id', [autenticarToken, autenticarAdmin], async 
 
 // --- INICIAR SERVIDOR ---
 app.listen(port, () => {
-    console.log(`Servidor backend rodando em http://localhost:${port}`);
+    console.log(`Servidor backend rodando na porta ${port}`);
     mysql.createConnection(dbConfig)
         .then(conn => { console.log('Conexão com o MySQL bem-sucedida!'); conn.end(); })
         .catch(err => console.error('Falha ao conectar com o MySQL:', err.message));
