@@ -15,7 +15,7 @@ const port = process.env.PORT || 3000;
 
 // --- CONFIGURAÇÃO DE CORS FINAL E ROBUSTA ---
 // IMPORTANTE: Substitua pela URL real do seu site no Netlify
-const allowedOrigins = ['https://SEU-DOMINIO-AQUI.netlify.app']; 
+const allowedOrigins = ['https://naregua.netlify.app']; 
 
 const corsOptions = {
   origin: function (origin, callback) {
