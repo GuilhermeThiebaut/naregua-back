@@ -1,5 +1,8 @@
 // src/backend/server.js
 
+// Carrega variáveis de ambiente do arquivo .env (para desenvolvimento local)
+require('dotenv').config();
+
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
@@ -8,28 +11,29 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Middlewares Globais
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Configuração da conexão com o MySQL (Direta, para testes locais)
+// Configuração da conexão com o MySQL (Preparada para Deploy)
 const dbConfig = {
-    host: 'localhost',
-    user: 'root',
-    password: '713368',
-    database: 'bncjzdu8swnlmwhhwnp1',
-    port: 3306
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    port: process.env.DB_PORT || 3306
 };
 
-// Chave secreta para JWT para testes locais
-const JWT_SECRET = 'CHAVE_SECRETA_LOCAL_PARA_TESTES_123456';
+// Chave secreta para JWT (Preparada para Deploy)
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // --- FUNÇÕES AUXILIARES ---
 function parseDateTime(dateStr, timeStr) {
-    return new Date(`${dateStr}T${timeStr}:00.000-03:00`);
+    // Usar -03:00 para forçar o fuso horário de Brasília (se aplicável)
+    return new Date(`${dateStr}T${timeStr}:00.000-03:00`); 
 }
 
 // --- MIDDLEWARES DE AUTENTICAÇÃO ---
@@ -38,7 +42,10 @@ const autenticarToken = (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
     if (token == null) return res.sendStatus(401);
     jwt.verify(token, JWT_SECRET, (err, userPayload) => {
-        if (err) return res.sendStatus(403);
+        if (err) {
+            console.error("Erro na verificação do JWT:", err.message);
+            return res.sendStatus(403);
+        }
         req.user = userPayload;
         next();
     });
@@ -134,7 +141,6 @@ app.post('/api/usuarios/recuperar-senha', async (req, res) => {
 
 app.delete('/api/usuarios/minha-conta', autenticarToken, async (req, res) => {
     const usuarioId = req.user.userId;
-    console.log(`--- REQUISIÇÃO RECEBIDA: Excluir conta do usuário ID: ${usuarioId} ---`);
     if (!usuarioId) {
         return res.status(400).json({ message: 'ID do usuário não encontrado no token.' });
     }
@@ -142,23 +148,19 @@ app.delete('/api/usuarios/minha-conta', autenticarToken, async (req, res) => {
     try {
         connection = await mysql.createConnection(dbConfig);
         await connection.beginTransaction();
-        console.log(`Executando DELETE na tabela 'usuarios' para o ID: ${usuarioId}`);
         const [result] = await connection.execute('DELETE FROM usuarios WHERE id = ?', [usuarioId]);
         if (result.affectedRows === 0) {
             await connection.rollback();
-            console.log(`!!-> ERRO: Usuário com ID ${usuarioId} não foi encontrado para exclusão.`);
             return res.status(404).json({ message: 'Usuário não encontrado para exclusão.' });
         }
         await connection.commit();
-        console.log(`SUCESSO: Usuário com ID ${usuarioId} excluído.`);
         res.status(200).json({ message: 'Sua conta e todos os dados associados foram excluídos com sucesso.' });
     } catch (error) {
         if (connection) await connection.rollback();
-        console.error("!!-> ERRO CRÍTICO AO EXCLUIR CONTA:", error);
+        console.error("Erro em /api/usuarios/minha-conta:", error);
         res.status(500).json({ message: 'Erro interno ao excluir sua conta.', error: error.message });
     } finally {
         if (connection) await connection.end();
-        console.log(`--- FIM DA REQUISIÇÃO DE EXCLUSÃO ---`);
     }
 });
 
@@ -282,7 +284,7 @@ app.post('/api/agendamentos', autenticarToken, async (req, res) => {
     }
     const agendamentoDateTime = parseDateTime(data, horario);
     const agora = new Date();
-    agora.setMinutes(agora.getMinutes() - 1);
+    agora.setMinutes(agora.getMinutes() - 1); 
     if (agendamentoDateTime < agora) {
         return res.status(400).json({ message: 'Não é possível agendar no passado.' });
     }
@@ -429,14 +431,14 @@ app.delete('/api/agendamentos/:agendamentoId', autenticarToken, async (req, res)
             return res.status(403).json({ message: 'Você não tem permissão para cancelar este agendamento.' });
         }
         const dataAgendamentoString = new Date(agendamento.data_agendamento).toISOString().split('T')[0];
-        const agendamentoDateTime = parseDateTime(dataAgendamentoString, agendamento.hora_agendamento.substring(0, 5));
+        const agendamentoDateTime = parseDateTime(dataAgendamentoString, agendamento.hora_agendamento.substring(0,5));
         if (agendamentoDateTime < new Date()) {
             await connection.rollback();
             return res.status(400).json({ message: 'Não é possível cancelar agendamentos que já ocorreram.' });
         }
         if (['Cancelado', 'Finalizado', 'Não Compareceu'].includes(agendamento.status_agendamento)) {
-            await connection.rollback();
-            return res.status(400).json({ message: `Este agendamento já está com status "${agendamento.status_agendamento}"` });
+             await connection.rollback();
+             return res.status(400).json({ message: `Este agendamento já está com status "${agendamento.status_agendamento}"` });
         }
         const [result] = await connection.execute('DELETE FROM agendamentos WHERE id = ? AND usuario_id = ?', [agendamentoId, usuarioIdToken]);
         if (result.affectedRows === 0) {
@@ -510,10 +512,10 @@ app.get('/api/admin/produtos', [autenticarToken, autenticarAdmin], async (req, r
         connection = await mysql.createConnection(dbConfig);
         const [produtos] = await connection.execute('SELECT * FROM produtos ORDER BY nome ASC');
         res.json(produtos);
-    } catch (error) {
-        res.status(500).json({ message: 'Erro ao buscar produtos para admin.' });
-    } finally {
-        if (connection) await connection.end();
+    } catch (error) { 
+        res.status(500).json({ message: 'Erro ao buscar produtos para admin.' }); 
+    } finally { 
+        if (connection) await connection.end(); 
     }
 });
 
@@ -573,7 +575,6 @@ app.delete('/api/admin/produtos/:id', [autenticarToken, autenticarAdmin], async 
         if (connection) await connection.end();
     }
 });
-
 
 // --- INICIAR SERVIDOR ---
 app.listen(port, () => {
